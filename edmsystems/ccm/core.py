@@ -265,6 +265,11 @@ def ccm_analysis(df: pd.DataFrame,
     lib_means = result['LibMeans']
     rho = lib_means.iloc[-1, 1]  # Last row, correlation column
 
+    # Calculate AUC (area under the convergence curve)
+    lib_sizes = lib_means.iloc[:, 0].values
+    rho_values = lib_means.iloc[:, 1].values
+    auc = np.trapz(rho_values, lib_sizes)
+
     # Fit convergence curve
     rho_col = f"{driver}:{target}"
     fit = fit_ccm_curve(lib_means, rho_col=rho_col, plot=False)
@@ -284,6 +289,7 @@ def ccm_analysis(df: pd.DataFrame,
         'Tp': Tp,
         'rho': rho,
         'rho_conv': rho_conv,
+        'auc': auc,
         'convergence': convergence,
         'fit': fit,
         'lib_means': lib_means

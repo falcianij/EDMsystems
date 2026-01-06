@@ -369,3 +369,74 @@ def generate_random_pair_surrogates(x: np.ndarray,
         y_surr[k] = y[perm]
 
     return x_surr, y_surr
+
+
+def generate_twin_iaaft_surrogates(x: np.ndarray,
+                                   y: np.ndarray,
+                                   n_surr: int,
+                                   tol_pc: float = 5.0,
+                                   max_iter: int = 10000,
+                                   sorttype: str = "quicksort",
+                                   verbose: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Generate twin IAAFT surrogates for two time series.
+
+    Creates surrogates that preserve the autocorrelation function (ACF)
+    of each variable independently. This preserves the internal dynamics
+    of each time series while destroying their cross-correlation and
+    causal coupling.
+
+    IMPORTANT: This generates surrogates INDEPENDENTLY for X and Y.
+    The ACF of each is preserved, but the CCF (cross-correlation) is
+    destroyed, which is appropriate for testing causal influence while
+    controlling for autocorrelation.
+
+    Parameters
+    ----------
+    x, y : np.ndarray, shape (N,)
+        Input time series (must have same length)
+    n_surr : int
+        Number of surrogate pairs to generate
+    tol_pc : float, default 5.0
+        Tolerance percentage for IAAFT convergence
+    max_iter : int, default 10000
+        Maximum iterations for IAAFT
+    sorttype : str, default 'quicksort'
+        Sorting algorithm for numpy.argsort
+    verbose : bool, default True
+        Show progress bar
+
+    Returns
+    -------
+    x_surr : np.ndarray, shape (n_surr, N)
+        IAAFT surrogates for x (preserves ACF of x)
+    y_surr : np.ndarray, shape (n_surr, N)
+        IAAFT surrogates for y (preserves ACF of y)
+
+    Notes
+    -----
+    Twin surrogates preserve:
+    - ACF of X (autocorrelation of driver)
+    - ACF of Y (autocorrelation of target)
+    - Amplitude distributions of X and Y
+
+    Twin surrogates destroy:
+    - CCF between X and Y (cross-correlation)
+    - Causal coupling between X and Y
+    - Phase relationships between X and Y
+
+    This makes them ideal for testing causal relationships in CCM while
+    accounting for autocorrelation artifacts.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+
+    assert x.shape == y.shape, "x and y must have same shape"
+
+    # Generate independent IAAFT surrogates for each time series
+    x_surr = generate_iaaft_surrogates(x, n_surr, tol_pc, max_iter,
+                                       sorttype, verbose)
+    y_surr = generate_iaaft_surrogates(y, n_surr, tol_pc, max_iter,
+                                       sorttype, verbose)
+
+    return x_surr, y_surr

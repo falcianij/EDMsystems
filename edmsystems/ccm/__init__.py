@@ -19,6 +19,7 @@ from .optimization import (
     optimize_simplex_E,
     grid_search_parameters,
     auto_optimize_parameters,
+    optimize_parameters_edm_standard,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     'optimize_simplex_E',
     'grid_search_parameters',
     'auto_optimize_parameters',
+    'optimize_parameters_edm_standard',
 ]

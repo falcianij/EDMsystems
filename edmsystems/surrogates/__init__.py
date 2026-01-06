@@ -12,6 +12,7 @@ from .generators import (
     generate_seasonal_pair_surrogates,
     generate_random_pair_surrogates,
     generate_twin_iaaft_surrogates,
+    generate_block_bootstrap_surrogates,
 )
 
 from .testing import (
@@ -32,6 +33,7 @@ __all__ = [
     'generate_seasonal_pair_surrogates',
     'generate_random_pair_surrogates',
     'generate_twin_iaaft_surrogates',
+    'generate_block_bootstrap_surrogates',
     # Testing
     'empirical_p',
     'compute_significance_thresholds',

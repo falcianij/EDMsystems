@@ -6,8 +6,14 @@ This script demonstrates the rigorous EDM procedure for CCM analysis:
 1. Choose τ > lag where ACF crosses 0.1
 2. Given τ, choose E that best unfolds the attractor of Y (target)
 3. Choose Tp that maximizes cross-mapping skill
-4. Test significance using twin surrogates that preserve ACF and CCF
+4. Test significance using block bootstrap surrogates that preserve ACF and CCF
 5. Use AUC (area under convergence curve) with 99th percentile threshold
+
+Block Bootstrap Surrogates:
+- Preserves ACF of X and Y (within block length)
+- Preserves CCF between X and Y (within block length)
+- Destroys long-range temporal order and year-to-year causal structure
+- Ideal for testing causality while controlling for correlations
 """
 
 import pandas as pd
@@ -25,7 +31,7 @@ from edmsystems.ccm import (
     ccm_analysis
 )
 from edmsystems.surrogates import (
-    generate_twin_iaaft_surrogates,
+    generate_block_bootstrap_surrogates,
     empirical_p
 )
 
@@ -173,21 +179,25 @@ def run_ccm_analysis(data, driver, target, params):
     return result
 
 
-def test_significance_with_twin_surrogates(data, driver, target, params, obs_auc, n_surr=100):
-    """Test significance using twin IAAFT surrogates and AUC."""
+def test_significance_with_block_bootstrap(data, driver, target, params, obs_auc, n_surr=100, block_length=12):
+    """Test significance using block bootstrap surrogates and AUC."""
     print("\n" + "="*70)
-    print("STEP 4: SIGNIFICANCE TESTING WITH TWIN SURROGATES")
+    print("STEP 4: SIGNIFICANCE TESTING WITH BLOCK BOOTSTRAP SURROGATES")
     print("="*70)
 
-    print(f"\nGenerating {n_surr} twin IAAFT surrogates...")
-    print("  - Preserves ACF of each variable (autocorrelation)")
-    print("  - Destroys CCF (cross-correlation) and causal coupling")
+    print(f"\nGenerating {n_surr} block bootstrap surrogates...")
+    print(f"  Block length: {block_length} (preserves {block_length}-month correlations)")
+    print("  - Preserves ACF of X and Y (within block length)")
+    print("  - Preserves CCF between X and Y (within block length)")
+    print("  - Destroys long-range temporal order and causal structure")
 
-    # Generate twin surrogates
-    x_surr, y_surr = generate_twin_iaaft_surrogates(
+    # Generate block bootstrap surrogates
+    x_surr, y_surr = generate_block_bootstrap_surrogates(
         data[driver].values,
         data[target].values,
         n_surr=n_surr,
+        block_length=block_length,
+        circular=True,
         verbose=True
     )
 
@@ -254,7 +264,7 @@ def test_significance_with_twin_surrogates(data, driver, target, params, obs_auc
     fig, ax = plt.subplots(figsize=(10, 6))
 
     ax.hist(auc_surr, bins=30, density=True, alpha=0.7, color='gray',
-           label=f'Twin IAAFT surrogates (n={n_surr})')
+           label=f'Block bootstrap surrogates (n={n_surr}, block={block_length})')
     ax.axvline(obs_auc, color='red', linestyle='--', linewidth=2,
               label=f'Observed AUC = {obs_auc:.1f}')
     ax.axvline(surr_99p, color='orange', linestyle=':', linewidth=2,
@@ -264,7 +274,7 @@ def test_significance_with_twin_surrogates(data, driver, target, params, obs_auc
 
     ax.set_xlabel('AUC (Area Under Convergence Curve)', fontsize=12)
     ax.set_ylabel('Density', fontsize=12)
-    ax.set_title(f'Surrogate Test: {driver} → {target}\n' +
+    ax.set_title(f'Block Bootstrap Surrogate Test: {driver} → {target}\n' +
                 f'(p = {p_value:.4f}, {"SIGNIFICANT" if significant_99 else "not significant"} at α=0.01)',
                 fontsize=13)
     ax.legend(fontsize=10)
@@ -291,7 +301,7 @@ def main():
     print("\nThis script demonstrates the rigorous EDM procedure:")
     print("  1. Parameter optimization (τ → E → Tp)")
     print("  2. CCM convergence analysis")
-    print("  3. Twin IAAFT surrogate testing")
+    print("  3. Block bootstrap surrogate testing (preserves ACF & CCF)")
     print("  4. AUC-based significance (99th percentile)")
 
     # Step 1: Load and preprocess
@@ -308,10 +318,11 @@ def main():
 
     # Step 4: Test significance
     if ccm_result['convergence']:
-        sig_result = test_significance_with_twin_surrogates(
+        sig_result = test_significance_with_block_bootstrap(
             data, driver, target, params,
             obs_auc=ccm_result['auc'],
-            n_surr=100
+            n_surr=100,
+            block_length=12  # Monthly data with annual cycles
         )
 
         # Final interpretation

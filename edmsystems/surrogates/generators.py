@@ -440,3 +440,164 @@ def generate_twin_iaaft_surrogates(x: np.ndarray,
                                        sorttype, verbose)
 
     return x_surr, y_surr
+
+
+def generate_block_bootstrap_surrogates(x: np.ndarray,
+                                        y: np.ndarray,
+                                        n_surr: int,
+                                        block_length: Optional[int] = None,
+                                        circular: bool = True,
+                                        seed: Optional[int] = None,
+                                        verbose: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Generate block bootstrap surrogates for two time series.
+
+    Creates surrogates by randomly resampling blocks of consecutive time points.
+    This preserves short-range correlations (ACF and CCF) up to the block length
+    while destroying long-range temporal structure.
+
+    PRESERVES (within block length):
+    - ACF of X (autocorrelation of driver)
+    - ACF of Y (autocorrelation of target)
+    - CCF between X and Y (cross-correlation)
+    - Amplitude distributions
+
+    DESTROYS:
+    - Long-range temporal order beyond block length
+    - Year-to-year predictive structure
+    - Causal lag relationships across blocks
+
+    This is ideal for testing causality while preserving local correlations
+    and the instantaneous relationship between X and Y.
+
+    Parameters
+    ----------
+    x, y : np.ndarray, shape (N,)
+        Input time series (must have same length)
+    n_surr : int
+        Number of surrogate pairs to generate
+    block_length : int or None, default None
+        Length of blocks to resample. If None, uses optimal block length
+        based on autocorrelation structure (approximately 3 * ACF decay time)
+    circular : bool, default True
+        If True, use circular block bootstrap (wrap around at boundaries)
+        If False, use non-overlapping blocks
+    seed : int or None
+        Random seed for reproducibility
+    verbose : bool, default False
+        Show progress bar
+
+    Returns
+    -------
+    x_surr : np.ndarray, shape (n_surr, N)
+        Block bootstrap surrogates for x
+    y_surr : np.ndarray, shape (n_surr, N)
+        Block bootstrap surrogates for y
+
+    References
+    ----------
+    Künsch, H. R. (1989). The jackknife and the bootstrap for general stationary
+    observations. The Annals of Statistics, 17(3), 1217-1241.
+
+    Notes
+    -----
+    The block length should be chosen to:
+    - Preserve correlations at relevant timescales
+    - Be large enough to capture dependencies
+    - Be small enough to provide sufficient randomization
+
+    For monthly data with annual cycles, block_length=12 preserves
+    within-year structure while randomizing year order.
+    """
+    rng = np.random.default_rng(seed)
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+
+    assert x.shape == y.shape, "x and y must have same shape"
+
+    n = x.shape[0]
+
+    # Determine optimal block length if not specified
+    if block_length is None:
+        # Simple heuristic: find where ACF drops below 0.1, multiply by 3
+        from statsmodels.tsa.stattools import acf
+        acf_x = acf(x, nlags=min(50, n//4), fft=True)
+        acf_decay = np.where(acf_x < 0.1)[0]
+        if len(acf_decay) > 0:
+            block_length = min(max(3 * acf_decay[0], 5), n // 4)
+        else:
+            block_length = max(int(np.sqrt(n)), 5)
+
+        if verbose:
+            print(f"Optimal block length: {block_length}")
+
+    block_length = int(block_length)
+
+    # Pre-allocate output arrays
+    x_surr = np.zeros((n_surr, n), dtype=float)
+    y_surr = np.zeros((n_surr, n), dtype=float)
+
+    iterator = tqdm(range(n_surr), desc="Block bootstrap (paired)",
+                   disable=not verbose)
+
+    for k in iterator:
+        if circular:
+            # Circular block bootstrap: sample with wraparound
+            x_boot = np.zeros(n)
+            y_boot = np.zeros(n)
+
+            pos = 0
+            while pos < n:
+                # Random starting position (circular)
+                start = rng.integers(0, n)
+
+                # Extract block (with wraparound)
+                block_end = min(block_length, n - pos)
+
+                if start + block_end <= n:
+                    # Block doesn't wrap
+                    x_boot[pos:pos + block_end] = x[start:start + block_end]
+                    y_boot[pos:pos + block_end] = y[start:start + block_end]
+                else:
+                    # Block wraps around
+                    first_part = n - start
+                    x_boot[pos:pos + first_part] = x[start:]
+                    y_boot[pos:pos + first_part] = y[start:]
+
+                    if pos + first_part < n:
+                        second_part = min(block_end - first_part, n - pos - first_part)
+                        x_boot[pos + first_part:pos + first_part + second_part] = x[:second_part]
+                        y_boot[pos + first_part:pos + first_part + second_part] = y[:second_part]
+
+                pos += block_end
+
+            x_surr[k] = x_boot
+            y_surr[k] = y_boot
+
+        else:
+            # Non-overlapping block bootstrap
+            n_blocks = n // block_length
+            remainder = n % block_length
+
+            # Sample block indices with replacement
+            block_indices = rng.choice(n_blocks, size=n_blocks, replace=True)
+
+            x_boot = []
+            y_boot = []
+
+            for idx in block_indices:
+                start = idx * block_length
+                end = start + block_length
+                x_boot.append(x[start:end])
+                y_boot.append(y[start:end])
+
+            # Handle remainder
+            if remainder > 0:
+                start = rng.integers(0, n - remainder + 1)
+                x_boot.append(x[start:start + remainder])
+                y_boot.append(y[start:start + remainder])
+
+            x_surr[k] = np.concatenate(x_boot)
+            y_surr[k] = np.concatenate(y_boot)
+
+    return x_surr, y_surr

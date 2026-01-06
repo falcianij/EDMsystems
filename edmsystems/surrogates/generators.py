@@ -601,3 +601,144 @@ def generate_block_bootstrap_surrogates(x: np.ndarray,
             y_surr[k] = np.concatenate(y_boot)
 
     return x_surr, y_surr
+
+
+def generate_multivariate_fourier_surrogates(x: np.ndarray,
+                                             y: np.ndarray,
+                                             n_surr: int,
+                                             seed: Optional[int] = None,
+                                             verbose: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Generate multivariate Fourier phase randomization surrogates.
+
+    Applies the SAME random phase shift to both X and Y, which EXACTLY preserves:
+    - Power spectrum of X (and thus ACF of X via Wiener-Khinchin theorem)
+    - Power spectrum of Y (and thus ACF of Y via Wiener-Khinchin theorem)
+    - Cross-spectrum (and thus CCF between X and Y via Wiener-Khinchin theorem)
+
+    This is the GOLD STANDARD for CCM surrogate testing because it preserves
+    all spectral properties (ACF and CCF) while only destroying temporal phase
+    relationships.
+
+    PRESERVES (EXACTLY):
+    - ACF of X (autocorrelation of driver at all lags)
+    - ACF of Y (autocorrelation of target at all lags)
+    - CCF between X and Y (cross-correlation at all lags)
+    - Amplitude distributions
+    - Power spectra (via Wiener-Khinchin)
+
+    DESTROYS:
+    - Temporal phase structure
+    - Causal predictive relationships
+    - Nonlinear dependencies
+
+    This method is superior to block bootstrap (which only approximately
+    preserves ACF/CCF) and twin IAAFT (which destroys CCF entirely).
+
+    Parameters
+    ----------
+    x, y : np.ndarray, shape (N,)
+        Input time series (must have same length)
+    n_surr : int
+        Number of surrogate pairs to generate
+    seed : int or None
+        Random seed for reproducibility
+    verbose : bool, default False
+        Show progress bar
+
+    Returns
+    -------
+    x_surr : np.ndarray, shape (n_surr, N)
+        Fourier surrogates for x
+    y_surr : np.ndarray, shape (n_surr, N)
+        Fourier surrogates for y
+
+    Notes
+    -----
+    The key insight is that applying the SAME phase randomization to both
+    series preserves the cross-spectrum S_xy(f) = X(f) * conj(Y(f)), because:
+
+    X'(f) = |X(f)| * exp(i * (angle(X(f)) + φ(f)))
+    Y'(f) = |Y(f)| * exp(i * (angle(Y(f)) + φ(f)))
+
+    S'_xy(f) = X'(f) * conj(Y'(f))
+             = |X(f)| |Y(f)| * exp(i * (angle(X(f)) - angle(Y(f))))
+             = S_xy(f)
+
+    And by the Wiener-Khinchin theorem, preserving the cross-spectrum
+    exactly preserves the cross-correlation function (CCF).
+
+    References
+    ----------
+    Prichard, D., & Theiler, J. (1994). Generating surrogate data for time
+    series with several simultaneously measured variables. Physical Review
+    Letters, 73(7), 951.
+
+    Theiler, J., et al. (1992). Testing for nonlinearity in time series:
+    the method of surrogate data. Physica D, 58(1-4), 77-94.
+    """
+    rng = np.random.default_rng(seed)
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+
+    assert x.shape == y.shape, "x and y must have same shape"
+
+    n = x.shape[0]
+    x_surr = np.zeros((n_surr, n), dtype=float)
+    y_surr = np.zeros((n_surr, n), dtype=float)
+
+    # Record NaN positions
+    nan_mask_x = np.isnan(x)
+    nan_mask_y = np.isnan(y)
+
+    # Replace NaNs with 0 for FFT (will restore later)
+    x_clean = np.where(nan_mask_x, 0.0, x)
+    y_clean = np.where(nan_mask_y, 0.0, y)
+
+    # Compute FFT of both series once
+    x_fft = np.fft.fft(x_clean)
+    y_fft = np.fft.fft(y_clean)
+
+    iterator = tqdm(range(n_surr), desc="Multivariate Fourier (paired)",
+                   disable=not verbose)
+
+    for k in iterator:
+        # Generate symmetric random phases for real-valued output
+        # Frequency components: [DC, f1, f2, ..., f_(n/2), -f_(n/2-1), ..., -f1]
+        # For real output, phases must be symmetric: φ(-f) = -φ(f)
+
+        n_freqs = n // 2 + 1
+        random_phases = rng.uniform(-np.pi, np.pi, n_freqs)
+
+        # DC component (f=0) must have zero phase (stay real)
+        random_phases[0] = 0.0
+
+        # Nyquist frequency (if n is even) must have zero phase (stay real)
+        if n % 2 == 0:
+            random_phases[-1] = 0.0
+
+        # Build full symmetric phase vector
+        if n % 2 == 0:
+            # Even length: [φ0, φ1, ..., φ_(n/2), -φ_(n/2-1), ..., -φ1]
+            full_phases = np.concatenate([random_phases, -random_phases[-2:0:-1]])
+        else:
+            # Odd length: [φ0, φ1, ..., φ_(n/2), -φ_(n/2), ..., -φ1]
+            full_phases = np.concatenate([random_phases, -random_phases[-1:0:-1]])
+
+        # Apply SAME random phase shift to both X and Y
+        # This preserves |X(f) * conj(Y(f))| = cross-spectrum
+        x_fft_surr = np.abs(x_fft) * np.exp(1j * (np.angle(x_fft) + full_phases))
+        y_fft_surr = np.abs(y_fft) * np.exp(1j * (np.angle(y_fft) + full_phases))
+
+        # Inverse FFT to get surrogate time series
+        x_s = np.real(np.fft.ifft(x_fft_surr))
+        y_s = np.real(np.fft.ifft(y_fft_surr))
+
+        # Restore NaN positions
+        x_s[nan_mask_x] = np.nan
+        y_s[nan_mask_y] = np.nan
+
+        x_surr[k] = x_s
+        y_surr[k] = y_s
+
+    return x_surr, y_surr

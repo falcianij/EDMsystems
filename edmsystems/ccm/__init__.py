@@ -1,39 +1,46 @@
 """
 Convergent Cross Mapping module for EDM analysis.
 
-This module provides standardized CCM analysis with convergence testing
-and parameter optimization.
+Provides CCM workflow, parameter optimization, and analysis functions.
 """
 
-from .core import (
-    saturating_curve,
-    fit_ccm_curve,
-    has_converged,
-    ccm_analysis,
-    ccm_with_significance,
+from .parameters import (
+    optimize_parameters,
+    find_optimal_tau,
+    find_optimal_E,
+    find_optimal_Tp,
+    acf_nan,
 )
 
-from .optimization import (
-    find_optimal_E_tau,
-    find_tau_autocorrelation,
-    optimize_simplex_E,
-    grid_search_parameters,
-    auto_optimize_parameters,
-    optimize_parameters_edm_standard,
+from .workflow import (
+    compute_ccm_pair,
+    run_ccm_workflow,
+    fit_ccm_curve,
+    has_converged,
+)
+
+from .analysis import (
+    compare_to_ground_truth,
+    compute_performance_metrics,
+    summarize_results,
+    create_adjacency_matrix,
 )
 
 __all__ = [
-    # Core CCM
-    'saturating_curve',
+    # Parameters
+    'optimize_parameters',
+    'find_optimal_tau',
+    'find_optimal_E',
+    'find_optimal_Tp',
+    'acf_nan',
+    # Workflow
+    'compute_ccm_pair',
+    'run_ccm_workflow',
     'fit_ccm_curve',
     'has_converged',
-    'ccm_analysis',
-    'ccm_with_significance',
-    # Optimization
-    'find_optimal_E_tau',
-    'find_tau_autocorrelation',
-    'optimize_simplex_E',
-    'grid_search_parameters',
-    'auto_optimize_parameters',
-    'optimize_parameters_edm_standard',
+    # Analysis
+    'compare_to_ground_truth',
+    'compute_performance_metrics',
+    'summarize_results',
+    'create_adjacency_matrix',
 ]

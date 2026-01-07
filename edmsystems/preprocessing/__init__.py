@@ -43,6 +43,15 @@ from .utils import (
     split_train_test,
 )
 
+from .transforms import (
+    normalize_with_params,
+    inverse_normalize,
+    detrend_with_params,
+    inverse_detrend,
+    preprocess_for_ccm,
+    inverse_preprocess,
+)
+
 __all__ = [
     # Normalizers
     'Normalizer',
@@ -76,4 +85,11 @@ __all__ = [
     'interpolate_missing',
     'remove_autocorrelation_lag',
     'split_train_test',
+    # Transforms
+    'normalize_with_params',
+    'inverse_normalize',
+    'detrend_with_params',
+    'inverse_detrend',
+    'preprocess_for_ccm',
+    'inverse_preprocess',
 ]

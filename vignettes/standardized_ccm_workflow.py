@@ -91,11 +91,10 @@ result = test_ccm_pair(
 
 print("\nResult summary:")
 print(f"  Parameters: tau={result['tau']}, E={result['E']}, Tp={result['Tp']}")
-print(f"  Final rho: {result['rho_mean']:.3f}")
-print(f"  AUC (original): {result['auc_original']:.2f}")
-print(f"  AUC (surrogates): {result['auc_surrogate_mean']:.2f} ± {result['auc_surrogate_std']:.2f}")
-print(f"  p-value: {result['p_value']:.4f}")
-print(f"  Significant: {result['is_significant']}")
+print(f"  Rho (max lib): {result['rho_original']:.3f}")
+print(f"  Rho (surrogates): {result['rho_surrogate_mean_twin']:.3f} ± {result['rho_surrogate_std_twin']:.3f}")
+print(f"  p-value: {result['p_value_twin']:.4f}")
+print(f"  Significant: {result['is_significant_twin']}")
 print(f"  Convergent: {result['convergent']}")
 
 # ============================================================================
@@ -145,8 +144,8 @@ results = run_ccm_workflow(
 )
 
 print("\nResults:")
-print(results[['driver', 'target', 'tau', 'E', 'Tp', 'rho_mean', 'auc_original',
-               'p_value', 'is_significant', 'convergent']])
+print(results[['driver', 'target', 'tau', 'E', 'Tp', 'rho_original',
+               'p_value_twin', 'is_significant_twin', 'convergent']])
 
 # ============================================================================
 # STEP 4: Compare to ground truth
@@ -158,10 +157,10 @@ print("="*80)
 print()
 
 # Summarize results with ground truth comparison
-summary = summarize_results(results, truth_network, print_summary=True)
+summary = summarize_results(results, truth_network, surrogate_method='twin', print_summary=True)
 
 # Get detailed comparison
-comparison = compare_to_ground_truth(results, truth_network)
+comparison = compare_to_ground_truth(results, truth_network, surrogate_method='twin')
 
 print("\nDetailed classifications:")
 print(comparison[['driver', 'target', 'detected', 'true_edge', 'classification']])
@@ -230,10 +229,10 @@ ax.set_title('Confusion Matrix', fontsize=14, fontweight='bold')
 ax.set_xlabel('Predicted', fontsize=12, fontweight='bold')
 ax.set_ylabel('Actual', fontsize=12, fontweight='bold')
 
-# Panel C: AUC distribution (detected vs non-detected)
+# Panel C: Rho distribution (detected vs non-detected)
 ax = axes[1, 0]
-detected = results[results['is_significant']]['auc_original'].values
-not_detected = results[~results['is_significant']]['auc_original'].values
+detected = results[results['is_significant_twin']]['rho_original'].values
+not_detected = results[~results['is_significant_twin']]['rho_original'].values
 
 if len(detected) > 0:
     ax.hist(detected, bins=10, alpha=0.7, label='Significant',
@@ -242,9 +241,9 @@ if len(not_detected) > 0:
     ax.hist(not_detected, bins=10, alpha=0.7, label='Not significant',
             color='red', edgecolor='black')
 
-ax.set_xlabel('AUC', fontsize=12, fontweight='bold')
+ax.set_xlabel('Rho (max lib)', fontsize=12, fontweight='bold')
 ax.set_ylabel('Count', fontsize=12, fontweight='bold')
-ax.set_title('AUC Distribution by Significance', fontsize=14, fontweight='bold')
+ax.set_title('Rho Distribution by Significance', fontsize=14, fontweight='bold')
 ax.legend()
 ax.grid(True, alpha=0.3, axis='y')
 

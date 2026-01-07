@@ -82,8 +82,8 @@ result = test_ccm_pair(
     verbose=True
 )
 
-print(f"Significant: {result['is_significant']}")
-print(f"p-value: {result['p_value']:.4f}")
+print(f"Significant: {result['is_significant_twin']}")
+print(f"p-value: {result['p_value_twin']:.4f}")
 ```
 
 ### 3. Run Workflow on Multiple Pairs
@@ -114,7 +114,7 @@ results = run_ccm_workflow(
 )
 
 # Compare to ground truth
-summary = summarize_results(results, truth_network, print_summary=True)
+summary = summarize_results(results, truth_network, surrogate_method='twin', print_summary=True)
 ```
 
 ## Package Structure
@@ -181,7 +181,8 @@ summary, details = compute_ccm(
 ```python
 from edmsystems.ccm.analysis import compare_to_ground_truth, compute_performance_metrics
 
-comparison = compare_to_ground_truth(results, truth_network)
+# Compare using specific surrogate method
+comparison = compare_to_ground_truth(results, truth_network, surrogate_method='twin')
 metrics = compute_performance_metrics(comparison)
 
 print(f"Precision: {metrics['precision']:.3f}")
@@ -443,16 +444,15 @@ The `run_ccm_workflow()` function returns a DataFrame with:
 | `E` | Optimized embedding dimension |
 | `Tp` | Optimized prediction horizon |
 | `theta` | S-map localization parameter |
-| `rho_mean` | Mean cross-mapping skill |
-| `auc_original` | Area under convergence curve |
-| `auc_surrogate_mean` | Mean AUC of surrogates |
-| `auc_surrogate_std` | Std dev of surrogate AUCs |
-| `p_value` | Empirical p-value |
-| `is_significant` | Boolean (p < 0.01) |
+| `rho_original` | Cross-mapping skill at max library size |
 | `convergent` | Boolean (positive slope) |
-| `percentile_95` | 95th percentile of surrogates |
-| `percentile_99` | 99th percentile of surrogates |
-| `n_failed_surrogates` | Count of failed surrogates |
+| `rho_surrogate_mean_{method}` | Mean rho of surrogates (per method) |
+| `rho_surrogate_std_{method}` | Std dev of surrogate rhos (per method) |
+| `p_value_{method}` | Empirical p-value (per method) |
+| `is_significant_{method}` | Boolean (p < 0.01) (per method) |
+| `percentile_95_{method}` | 95th percentile of surrogates (per method) |
+| `percentile_99_{method}` | 99th percentile of surrogates (per method) |
+| `n_failed_surrogates_{method}` | Count of failed surrogates (per method) |
 
 ## Advanced Usage
 
@@ -461,10 +461,22 @@ The `run_ccm_workflow()` function returns a DataFrame with:
 ```python
 from edmsystems.ccm import test_ccm_pair
 
-# Use different surrogate methods
+# Use different surrogate methods individually
 result_twin = test_ccm_pair(X, Y, surrogate_method='twin')
 result_circular = test_ccm_pair(X, Y, surrogate_method='circular')
 result_seasonal = test_ccm_pair(X, Y, surrogate_method='within_phase', period=12)
+
+# Test multiple surrogate methods simultaneously
+result_multi = test_ccm_pair(
+    X, Y,
+    surrogate_method=['twin', 'within_phase', 'circular'],
+    period=12
+)
+
+# Access method-specific results
+print(f"Twin p-value: {result_multi['p_value_twin']:.4f}")
+print(f"Within-phase p-value: {result_multi['p_value_within_phase']:.4f}")
+print(f"Circular p-value: {result_multi['p_value_circular']:.4f}")
 ```
 
 ### S-map Theta Optimization

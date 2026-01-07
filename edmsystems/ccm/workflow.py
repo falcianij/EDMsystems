@@ -34,7 +34,7 @@ def test_ccm_pair(X: np.ndarray,
                  libSizes: str = "50 500 25",
                  sample: int = 100,
                  n_surrogates: int = 99,
-                 surrogate_method: Literal['twin', 'random', 'random_paired', 'circular', 'within_phase'] = 'twin',
+                 surrogate_method: Union[str, List[str]] = 'twin',
                  period: int = 12,
                  optimize_params: bool = True,
                  optimize_theta: bool = False,
@@ -66,8 +66,9 @@ def test_ccm_pair(X: np.ndarray,
         Number of random library samples per library size
     n_surrogates : int, default 99
         Number of surrogate realizations
-    surrogate_method : str, default 'twin'
-        Surrogate method: 'twin', 'random', 'random_paired', 'circular', 'within_phase'
+    surrogate_method : str or list of str, default 'twin'
+        Surrogate method(s): 'twin', 'random', 'random_paired', 'circular', 'within_phase'
+        Can be a single method or a list of methods to test multiple null models
     period : int, default 12
         Period for within_phase surrogates
     optimize_params : bool, default True
@@ -87,15 +88,16 @@ def test_ccm_pair(X: np.ndarray,
         Results dictionary containing:
         - driver, target: variable names
         - tau, E, Tp, theta: parameters used
-        - rho_mean: mean cross-mapping skill
-        - auc_original: AUC of original convergence curve
-        - auc_surrogates: array of surrogate AUCs
-        - auc_surrogate_mean, auc_surrogate_std: summary statistics
-        - p_value: empirical p-value
-        - is_significant: boolean (p < 0.01)
+        - rho_original: cross-mapping skill at largest library size
+        - rho_surrogates_{method}: dict with surrogate rho values per method
+        - rho_surrogate_mean_{method}: mean surrogate rho per method
+        - rho_surrogate_std_{method}: std dev of surrogate rho per method
+        - p_value_{method}: empirical p-value per method
+        - is_significant_{method}: boolean (p < 0.01) per method
         - convergent: boolean (positive slope in convergence curve)
         - summary_original: convergence curve data
-        - percentiles: 95th and 99th percentile of surrogate distribution
+        - percentiles_{method}: 95th and 99th percentile per method
+        - surrogate_methods: list of methods tested
     """
     if seed is not None:
         np.random.seed(seed)
@@ -147,12 +149,11 @@ def test_ccm_pair(X: np.ndarray,
         verbose=verbose
     )
 
-    auc_orig = compute_auc(summary_orig)
-    rho_mean = summary_orig['rho_mean'].iloc[-1]  # Final library size rho
+    # Use rho at largest library size instead of AUC
+    rho_original = summary_orig['rho_mean'].iloc[-1]  # Final library size rho
 
     if verbose:
-        print(f"  Original AUC: {auc_orig:.2f}")
-        print(f"  Final rho: {rho_mean:.3f}")
+        print(f"  Original rho (max lib): {rho_original:.3f}")
 
     # Step 3: Test convergence (positive slope)
     if len(summary_orig) >= 2:
@@ -175,88 +176,112 @@ def test_ccm_pair(X: np.ndarray,
         print(f"  Convergent: {convergent}")
 
     # Step 4: Generate and test surrogates
-    if verbose:
-        print(f"\nGenerating {n_surrogates} {surrogate_method} surrogates...")
+    # Convert surrogate_method to list if it's a single string
+    if isinstance(surrogate_method, str):
+        surrogate_methods = [surrogate_method]
+    else:
+        surrogate_methods = surrogate_method
 
     surrogate_seeds = np.random.randint(0, 2**31, size=n_surrogates)
 
-    def compute_single_surrogate(surr_seed):
-        np.random.seed(surr_seed)
+    # Store results for each method
+    results_by_method = {}
 
-        # Generate surrogate
-        if surrogate_method == 'twin':
-            X_surr, Y_surr = generate_twin_surrogates(X, Y)
-        elif surrogate_method == 'random_paired':
-            X_surr, Y_surr = generate_random_paired_surrogates(X, Y)
-        elif surrogate_method == 'circular':
-            X_surr, Y_surr = generate_circular_surrogates(X, Y)
-        elif surrogate_method == 'within_phase':
-            X_surr, Y_surr = generate_within_phase_surrogates(X, Y, period=period)
-        elif surrogate_method == 'random':
-            # For 'random', shuffle both independently
-            X_surr = generate_random_surrogates(X)
-            Y_surr = generate_random_surrogates(Y)
-        else:
-            raise ValueError(f"Unknown surrogate method: {surrogate_method}")
+    for method in surrogate_methods:
+        if verbose:
+            print(f"\nGenerating {n_surrogates} '{method}' surrogates...")
 
-        # Compute CCM on surrogate
-        df_surr = pd.DataFrame({
-            'time': range(1, len(X_surr) + 1),
-            driver_name: X_surr,
-            target_name: Y_surr
-        })
+        def compute_single_surrogate(surr_seed, surrogate_type):
+            np.random.seed(surr_seed)
 
-        summary_surr, _ = compute_ccm(
-            df_surr,
-            columns=target_name,
-            target=driver_name,
-            E=E,
-            Tp=Tp,
-            tau=-tau,
-            libSizes=libSizes,
-            sample=sample,
-            exclusionRadius=exclusionRadius,
-            theta=theta,
-            verbose=False
+            # Generate surrogate based on method
+            if surrogate_type == 'twin':
+                X_surr, Y_surr = generate_twin_surrogates(X, Y)
+            elif surrogate_type == 'random_paired':
+                X_surr, Y_surr = generate_random_paired_surrogates(X, Y)
+            elif surrogate_type == 'circular':
+                X_surr, Y_surr = generate_circular_surrogates(X, Y)
+            elif surrogate_type == 'within_phase':
+                X_surr, Y_surr = generate_within_phase_surrogates(X, Y, period=period)
+            elif surrogate_type == 'random':
+                # For 'random', shuffle both independently
+                X_surr = generate_random_surrogates(X)
+                Y_surr = generate_random_surrogates(Y)
+            else:
+                raise ValueError(f"Unknown surrogate method: {surrogate_type}")
+
+            # Compute CCM on surrogate
+            df_surr = pd.DataFrame({
+                'time': range(1, len(X_surr) + 1),
+                driver_name: X_surr,
+                target_name: Y_surr
+            })
+
+            summary_surr, _ = compute_ccm(
+                df_surr,
+                columns=target_name,
+                target=driver_name,
+                E=E,
+                Tp=Tp,
+                tau=-tau,
+                libSizes=libSizes,
+                sample=sample,
+                exclusionRadius=exclusionRadius,
+                theta=theta,
+                verbose=False
+            )
+
+            # Return rho at largest library size
+            return summary_surr['rho_mean'].iloc[-1]
+
+        # Parallel surrogate computation
+        rho_surrogates = Parallel(n_jobs=n_jobs)(
+            delayed(compute_single_surrogate)(seed, method)
+            for seed in tqdm(surrogate_seeds, desc=f"{method} surrogates", disable=not verbose)
         )
 
-        return compute_auc(summary_surr)
+        rho_surrogates = np.array(rho_surrogates)
 
-    # Parallel surrogate computation
-    auc_surrogates = Parallel(n_jobs=n_jobs)(
-        delayed(compute_single_surrogate)(seed)
-        for seed in tqdm(surrogate_seeds, desc="Surrogates", disable=not verbose)
-    )
+        # Remove NaN surrogates
+        valid_surrogates = rho_surrogates[~np.isnan(rho_surrogates)]
 
-    auc_surrogates = np.array(auc_surrogates)
+        if len(valid_surrogates) == 0:
+            if verbose:
+                print(f"  WARNING: All {method} surrogates failed!")
+            p_value = np.nan
+            is_significant = False
+            percentile_95 = np.nan
+            percentile_99 = np.nan
+        else:
+            # Compute p-value (rho_original should be GREATER than surrogates for significance)
+            p_value = (np.sum(valid_surrogates >= rho_original) + 1) / (len(valid_surrogates) + 1)
+            is_significant = p_value < 0.01
 
-    # Remove NaN surrogates
-    valid_surrogates = auc_surrogates[~np.isnan(auc_surrogates)]
+            # Compute percentiles
+            percentile_95 = np.percentile(valid_surrogates, 95)
+            percentile_99 = np.percentile(valid_surrogates, 99)
 
-    if len(valid_surrogates) == 0:
-        if verbose:
-            print("  WARNING: All surrogates failed!")
-        p_value = np.nan
-        is_significant = False
-        percentile_95 = np.nan
-        percentile_99 = np.nan
-    else:
-        # Compute p-value
-        p_value = (np.sum(valid_surrogates >= auc_orig) + 1) / (len(valid_surrogates) + 1)
-        is_significant = p_value < 0.01
+            if verbose:
+                print(f"  Surrogate rho: {np.mean(valid_surrogates):.3f} ± {np.std(valid_surrogates):.3f}")
+                print(f"  95th percentile: {percentile_95:.3f}")
+                print(f"  99th percentile: {percentile_99:.3f}")
+                print(f"  p-value: {p_value:.4f}")
+                print(f"  Significant: {is_significant}")
 
-        # Compute percentiles
-        percentile_95 = np.percentile(valid_surrogates, 95)
-        percentile_99 = np.percentile(valid_surrogates, 99)
+        # Store results for this method
+        results_by_method[method] = {
+            'rho_surrogates': rho_surrogates,
+            'rho_surrogate_mean': np.nanmean(rho_surrogates),
+            'rho_surrogate_std': np.nanstd(rho_surrogates),
+            'p_value': p_value,
+            'is_significant': is_significant,
+            'percentile_95': percentile_95,
+            'percentile_99': percentile_99,
+            'n_failed': np.sum(np.isnan(rho_surrogates)),
+        }
 
-        if verbose:
-            print(f"\n  Surrogate AUC: {np.mean(valid_surrogates):.2f} ± {np.std(valid_surrogates):.2f}")
-            print(f"  95th percentile: {percentile_95:.2f}")
-            print(f"  99th percentile: {percentile_99:.2f}")
-            print(f"  p-value: {p_value:.4f}")
-            print(f"  Significant: {is_significant}")
-
-    return {
+    # Build result dictionary with method-specific statistics
+    result = {
         'driver': driver_name,
         'target': target_name,
         'tau': tau,
@@ -264,19 +289,24 @@ def test_ccm_pair(X: np.ndarray,
         'Tp': Tp,
         'theta': theta,
         'exclusionRadius': exclusionRadius,
-        'rho_mean': rho_mean,
-        'auc_original': auc_orig,
-        'auc_surrogates': auc_surrogates,
-        'auc_surrogate_mean': np.nanmean(auc_surrogates),
-        'auc_surrogate_std': np.nanstd(auc_surrogates),
-        'p_value': p_value,
-        'is_significant': is_significant,
+        'rho_original': rho_original,
         'convergent': convergent,
-        'percentile_95': percentile_95,
-        'percentile_99': percentile_99,
         'summary_original': summary_orig,
-        'n_failed_surrogates': np.sum(np.isnan(auc_surrogates)),
+        'surrogate_methods': surrogate_methods,
     }
+
+    # Add method-specific results
+    for method, stats in results_by_method.items():
+        result[f'rho_surrogates_{method}'] = stats['rho_surrogates']
+        result[f'rho_surrogate_mean_{method}'] = stats['rho_surrogate_mean']
+        result[f'rho_surrogate_std_{method}'] = stats['rho_surrogate_std']
+        result[f'p_value_{method}'] = stats['p_value']
+        result[f'is_significant_{method}'] = stats['is_significant']
+        result[f'percentile_95_{method}'] = stats['percentile_95']
+        result[f'percentile_99_{method}'] = stats['percentile_99']
+        result[f'n_failed_surrogates_{method}'] = stats['n_failed']
+
+    return result
 
 
 def run_ccm_workflow(df: pd.DataFrame,
@@ -351,26 +381,48 @@ def run_ccm_workflow(df: pd.DataFrame,
         )
 
     # Format results as dataframe
-    results_df = pd.DataFrame([
-        {
+    # Extract all unique surrogate methods used
+    all_methods = set()
+    for r in results:
+        all_methods.update(r['surrogate_methods'])
+    all_methods = sorted(list(all_methods))
+
+    # Build dataframe rows
+    rows = []
+    for r in results:
+        row = {
             'driver': r['driver'],
             'target': r['target'],
             'tau': r['tau'],
             'E': r['E'],
             'Tp': r['Tp'],
             'theta': r['theta'],
-            'rho_mean': r['rho_mean'],
-            'auc_original': r['auc_original'],
-            'auc_surrogate_mean': r['auc_surrogate_mean'],
-            'auc_surrogate_std': r['auc_surrogate_std'],
-            'percentile_95': r['percentile_95'],
-            'percentile_99': r['percentile_99'],
-            'p_value': r['p_value'],
-            'is_significant': r['is_significant'],
+            'rho_original': r['rho_original'],
             'convergent': r['convergent'],
-            'n_failed_surrogates': r['n_failed_surrogates'],
         }
-        for r in results
-    ])
+
+        # Add method-specific columns
+        for method in all_methods:
+            if method in r['surrogate_methods']:
+                row[f'rho_surrogate_mean_{method}'] = r[f'rho_surrogate_mean_{method}']
+                row[f'rho_surrogate_std_{method}'] = r[f'rho_surrogate_std_{method}']
+                row[f'p_value_{method}'] = r[f'p_value_{method}']
+                row[f'is_significant_{method}'] = r[f'is_significant_{method}']
+                row[f'percentile_95_{method}'] = r[f'percentile_95_{method}']
+                row[f'percentile_99_{method}'] = r[f'percentile_99_{method}']
+                row[f'n_failed_surrogates_{method}'] = r[f'n_failed_surrogates_{method}']
+            else:
+                # Method not used for this pair, fill with NaN
+                row[f'rho_surrogate_mean_{method}'] = np.nan
+                row[f'rho_surrogate_std_{method}'] = np.nan
+                row[f'p_value_{method}'] = np.nan
+                row[f'is_significant_{method}'] = False
+                row[f'percentile_95_{method}'] = np.nan
+                row[f'percentile_99_{method}'] = np.nan
+                row[f'n_failed_surrogates_{method}'] = np.nan
+
+        rows.append(row)
+
+    results_df = pd.DataFrame(rows)
 
     return results_df

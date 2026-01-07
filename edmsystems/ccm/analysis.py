@@ -12,7 +12,8 @@ from typing import Optional, Dict
 
 def compare_to_ground_truth(results_df: pd.DataFrame,
                            ground_truth: pd.DataFrame,
-                           significance_col: str = 'is_significant') -> pd.DataFrame:
+                           significance_col: str = 'is_significant_twin',
+                           surrogate_method: Optional[str] = None) -> pd.DataFrame:
     """
     Compare detected causal network to ground truth.
 
@@ -23,8 +24,10 @@ def compare_to_ground_truth(results_df: pd.DataFrame,
     ground_truth : pd.DataFrame
         Ground truth adjacency matrix (index=drivers, columns=targets)
         Values of 1 indicate true causal edge, 0 indicates no causation
-    significance_col : str, default 'is_significant'
+    significance_col : str, default 'is_significant_twin'
         Column in results_df indicating significance
+    surrogate_method : str or None
+        If provided, uses f'is_significant_{surrogate_method}' as significance column
 
     Returns
     -------
@@ -39,7 +42,14 @@ def compare_to_ground_truth(results_df: pd.DataFrame,
     --------
     >>> comparison = compare_to_ground_truth(results, truth_network)
     >>> print(comparison[comparison['classification'] == 'FP'])  # False positives
+
+    >>> # Use specific surrogate method
+    >>> comparison = compare_to_ground_truth(results, truth_network, surrogate_method='twin')
     """
+    # Determine which significance column to use
+    if surrogate_method is not None:
+        significance_col = f'is_significant_{surrogate_method}'
+
     comparisons = []
 
     for _, row in results_df.iterrows():
@@ -134,6 +144,7 @@ def compute_performance_metrics(comparison_df: pd.DataFrame) -> Dict[str, float]
 
 def summarize_results(results_df: pd.DataFrame,
                      ground_truth: Optional[pd.DataFrame] = None,
+                     surrogate_method: str = 'twin',
                      print_summary: bool = True) -> Dict:
     """
     Summarize CCM results with optional ground truth comparison.
@@ -144,6 +155,8 @@ def summarize_results(results_df: pd.DataFrame,
         CCM results dataframe
     ground_truth : pd.DataFrame or None
         Ground truth adjacency matrix (if available)
+    surrogate_method : str, default 'twin'
+        Which surrogate method to use for significance testing
     print_summary : bool, default True
         Print formatted summary to console
 
@@ -160,20 +173,22 @@ def summarize_results(results_df: pd.DataFrame,
     --------
     >>> summary = summarize_results(results, truth_network)
     """
+    significance_col = f'is_significant_{surrogate_method}'
+
     n_pairs = len(results_df)
-    n_significant = results_df['is_significant'].sum()
+    n_significant = results_df[significance_col].sum()
     n_convergent = results_df['convergent'].sum()
 
     summary = {
         'n_pairs_tested': n_pairs,
         'n_significant': n_significant,
         'n_convergent': n_convergent,
-        'mean_rho': results_df['rho_mean'].mean(),
-        'mean_auc': results_df['auc_original'].mean(),
+        'mean_rho': results_df['rho_original'].mean(),
+        'surrogate_method': surrogate_method,
     }
 
     if ground_truth is not None:
-        comparison = compare_to_ground_truth(results_df, ground_truth)
+        comparison = compare_to_ground_truth(results_df, ground_truth, surrogate_method=surrogate_method)
         metrics = compute_performance_metrics(comparison)
         summary['performance_metrics'] = metrics
 
@@ -181,11 +196,11 @@ def summarize_results(results_df: pd.DataFrame,
         print("\n" + "="*70)
         print("CCM RESULTS SUMMARY")
         print("="*70)
+        print(f"Surrogate method: {surrogate_method}")
         print(f"Pairs tested: {n_pairs}")
         print(f"Significant results (p < 0.01): {n_significant} ({100*n_significant/n_pairs:.1f}%)")
         print(f"Convergent results: {n_convergent} ({100*n_convergent/n_pairs:.1f}%)")
-        print(f"Mean rho: {summary['mean_rho']:.3f}")
-        print(f"Mean AUC: {summary['mean_auc']:.2f}")
+        print(f"Mean rho (original): {summary['mean_rho']:.3f}")
 
         if ground_truth is not None:
             print("\n" + "-"*70)

@@ -78,7 +78,6 @@ result = test_ccm_pair(
     n_surrogates=99,            # Number of surrogates for testing
     surrogate_method='twin',    # Multivariate Fourier surrogates
     optimize_params=True,       # Auto-optimize tau, E, Tp
-    n_jobs=-1,                  # Parallel processing
     verbose=True
 )
 
@@ -109,7 +108,7 @@ results = run_ccm_workflow(
     n_surrogates=99,
     surrogate_method='twin',
     optimize_params=True,
-    n_jobs=-1,
+    n_jobs=-1,                  # Parallel across pairs (use all cores)
     verbose=True
 )
 
@@ -405,11 +404,14 @@ results = run_ccm_workflow(df, pairs=None)  # All combinations
 ### ✓ Parallel Processing
 
 ```python
-results = run_ccm_workflow(
-    df,
-    n_jobs=-1,        # Parallel within each pair (surrogate generation)
-    n_jobs_pairs=4    # Parallel across pairs (4 pairs simultaneously)
-)
+# Sequential processing (one pair at a time)
+results = run_ccm_workflow(df, n_jobs=1)
+
+# Parallel across pairs (all CPU cores)
+results = run_ccm_workflow(df, n_jobs=-1)
+
+# Parallel across pairs (4 pairs simultaneously)
+results = run_ccm_workflow(df, n_jobs=4)
 ```
 
 ### ✓ Variable Library Sizes
@@ -538,11 +540,8 @@ results = run_ccm_workflow(df, libSizes="100 400 50")  # Fewer points
 ### Slow Performance
 
 ```python
-# Enable parallel processing
+# Enable parallel processing across pairs
 results = run_ccm_workflow(df, n_jobs=-1)  # Use all CPU cores
-
-# Process pairs in parallel
-results = run_ccm_workflow(df, n_jobs_pairs=4)  # 4 pairs at once
 
 # Reduce computational load
 results = run_ccm_workflow(

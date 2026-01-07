@@ -38,7 +38,6 @@ def test_ccm_pair(X: np.ndarray,
                  period: int = 12,
                  optimize_params: bool = True,
                  optimize_theta: bool = False,
-                 n_jobs: int = -1,
                  seed: Optional[int] = None,
                  verbose: bool = True) -> dict:
     """
@@ -75,8 +74,6 @@ def test_ccm_pair(X: np.ndarray,
         Whether to optimize parameters (tau, E, Tp)
     optimize_theta : bool, default False
         Whether to optimize theta using S-map
-    n_jobs : int, default -1
-        Number of parallel jobs (-1 = all cores)
     seed : int or None
         Random seed
     verbose : bool, default True
@@ -234,11 +231,11 @@ def test_ccm_pair(X: np.ndarray,
             # Return rho at largest library size
             return summary_surr['rho_mean'].iloc[-1]
 
-        # Parallel surrogate computation
-        rho_surrogates = Parallel(n_jobs=n_jobs)(
-            delayed(compute_single_surrogate)(seed, method)
-            for seed in tqdm(surrogate_seeds, desc=f"{method} surrogates", disable=not verbose)
-        )
+        # Sequential surrogate computation (no parallel processing within pair)
+        rho_surrogates = []
+        for seed in tqdm(surrogate_seeds, desc=f"{method} surrogates", disable=not verbose):
+            rho = compute_single_surrogate(seed, method)
+            rho_surrogates.append(rho)
 
         rho_surrogates = np.array(rho_surrogates)
 
@@ -312,6 +309,7 @@ def test_ccm_pair(X: np.ndarray,
 def run_ccm_workflow(df: pd.DataFrame,
                     pairs: Optional[List[Tuple[str, str]]] = None,
                     datetime_col: str = 'datetime',
+                    n_jobs: int = 1,
                     **kwargs) -> pd.DataFrame:
     """
     Run complete CCM workflow on multiple variable pairs.
@@ -325,6 +323,9 @@ def run_ccm_workflow(df: pd.DataFrame,
         If None, tests all possible directed pairs.
     datetime_col : str, default 'datetime'
         Name of datetime column (excluded from analysis)
+    n_jobs : int, default 1
+        Number of parallel jobs for processing multiple pairs.
+        Use -1 for all cores. Set to 1 for sequential processing.
     **kwargs
         Additional arguments passed to test_ccm_pair()
 
@@ -335,13 +336,14 @@ def run_ccm_workflow(df: pd.DataFrame,
 
     Examples
     --------
-    >>> # Test all pairs
+    >>> # Test all pairs sequentially
     >>> results = run_ccm_workflow(df)
 
-    >>> # Test specific pairs
+    >>> # Test specific pairs in parallel
     >>> results = run_ccm_workflow(
     ...     df,
     ...     pairs=[('X', 'Y'), ('Y', 'X')],
+    ...     n_jobs=-1,  # Parallel across pairs
     ...     n_surrogates=99,
     ...     surrogate_method='twin'
     ... )
@@ -354,30 +356,28 @@ def run_ccm_workflow(df: pd.DataFrame,
         pairs = [(driver, target) for driver in variables
                  for target in variables if driver != target]
 
-    # Extract common kwargs
+    # Extract verbose flag for progress bar control
     verbose = kwargs.get('verbose', True)
-    n_jobs_pairs = kwargs.get('n_jobs_pairs', 1)  # Parallelization across pairs
-
-    # Remove n_jobs_pairs from kwargs (not used by test_ccm_pair)
-    kwargs_for_test = {k: v for k, v in kwargs.items() if k != 'n_jobs_pairs'}
 
     def test_single_pair(driver, target):
         X = df[driver].values
         Y = df[target].values
-        result = test_ccm_pair(X, Y, driver, target, **kwargs_for_test)
+        result = test_ccm_pair(X, Y, driver, target, **kwargs)
         return result
 
-    # Test pairs (optionally in parallel)
-    if n_jobs_pairs == 1:
-        # Sequential
-        results = [test_single_pair(driver, target) for driver, target in pairs]
+    # Test pairs (optionally in parallel) with progress bar
+    if n_jobs == 1:
+        # Sequential with progress bar
+        results = []
+        for driver, target in tqdm(pairs, desc="Testing pairs", disable=not verbose):
+            results.append(test_single_pair(driver, target))
     else:
-        # Parallel across pairs
+        # Parallel across pairs with progress bar
         if verbose:
-            print(f"\nTesting {len(pairs)} pairs in parallel (n_jobs={n_jobs_pairs})...")
-        results = Parallel(n_jobs=n_jobs_pairs)(
+            print(f"\nTesting {len(pairs)} pairs in parallel (n_jobs={n_jobs})...")
+        results = Parallel(n_jobs=n_jobs)(
             delayed(test_single_pair)(driver, target)
-            for driver, target in pairs
+            for driver, target in tqdm(pairs, desc="Testing pairs", disable=not verbose)
         )
 
     # Format results as dataframe

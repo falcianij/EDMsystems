@@ -84,7 +84,6 @@ result = test_ccm_pair(
     surrogate_method='twin',
     optimize_params=True,
     optimize_theta=False,
-    n_jobs=-1,
     seed=42,
     verbose=True
 )
@@ -137,8 +136,7 @@ results = run_ccm_workflow(
     optimize_params=True,
     optimize_theta=False,
     exclusionRadius=0,
-    n_jobs=-1,            # Parallel within each pair
-    n_jobs_pairs=1,       # Sequential across pairs (for clarity)
+    n_jobs=-1,            # Parallel across pairs (use all cores)
     seed=42,
     verbose=False,        # Quiet mode
 )

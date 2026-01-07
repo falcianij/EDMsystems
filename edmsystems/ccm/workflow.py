@@ -25,6 +25,60 @@ from .parameters import optimize_parameters
 from ..surrogates import generate_multivariate_fourier_surrogates
 
 
+def _process_pair_wrapper(args):
+    """
+    Wrapper function for parallel processing of CCM pairs.
+
+    This function must be at module level (not nested) to be picklable
+    for multiprocessing.
+
+    Parameters
+    ----------
+    args : tuple
+        (pair, df, auto_optimize, E_range, libSizes, sample, n_surrogates, seed)
+
+    Returns
+    -------
+    dict
+        CCM result for the pair
+    """
+    pair, df, auto_optimize, E_range, libSizes, sample, n_surrogates, seed = args
+    driver, target = pair
+
+    # Optimize parameters if requested
+    if auto_optimize:
+        params = optimize_parameters(
+            df[['time', driver, target]],
+            driver=driver,
+            target=target,
+            E_range=E_range,
+            verbose=False
+        )
+        E, tau, Tp, theta = params['E'], params['tau'], params['Tp'], 0
+        exclusionRadius = abs(E * tau)
+    else:
+        # Use default or provided parameters
+        E = list(E_range)[0]
+        tau = -1  # Default tau
+        Tp = 1
+        theta = 0
+        exclusionRadius = abs(E * tau)
+
+    # Compute CCM
+    result = compute_ccm_pair(
+        df, driver, target,
+        E=E, tau=tau, Tp=Tp, theta=theta,
+        exclusionRadius=exclusionRadius,
+        libSizes=libSizes,
+        sample=sample,
+        n_surrogates=n_surrogates,
+        seed=seed,
+        verbose=False
+    )
+
+    return result
+
+
 def saturating_curve(L: np.ndarray, a: float, K: float, b: float) -> np.ndarray:
     """Saturating curve for CCM convergence fitting."""
     return a * L / (K + L) + b
@@ -343,47 +397,16 @@ def run_ccm_workflow(df: pd.DataFrame,
     if verbose:
         print(f"Testing {len(pairs)} pairs...")
 
-    # Wrapper function for parallel processing
-    def process_pair(pair):
-        driver, target = pair
-
-        # Optimize parameters if requested
-        if auto_optimize:
-            params = optimize_parameters(
-                df[['time', driver, target]],
-                driver=driver,
-                target=target,
-                E_range=E_range,
-                verbose=False
-            )
-            E, tau, Tp, theta = params['E'], params['tau'], params['Tp'], 0
-            exclusionRadius = abs(E * tau)
-        else:
-            # Use default or provided parameters
-            E = list(E_range)[0]
-            tau = list(tau_range)[0]
-            Tp = 1
-            theta = 0
-            exclusionRadius = abs(E * tau)
-
-        # Compute CCM
-        result = compute_ccm_pair(
-            df, driver, target,
-            E=E, tau=tau, Tp=Tp, theta=theta,
-            exclusionRadius=exclusionRadius,
-            libSizes=libSizes,
-            sample=sample,
-            n_surrogates=n_surrogates,
-            seed=seed,
-            verbose=False
-        )
-
-        return result
+    # Prepare arguments for each pair
+    args_list = [
+        (pair, df, auto_optimize, E_range, libSizes, sample, n_surrogates, seed)
+        for pair in pairs
+    ]
 
     # Run in parallel
     with multiprocessing.Pool(processes=n_jobs) as pool:
         results = list(tqdm(
-            pool.imap(process_pair, pairs),
+            pool.imap(_process_pair_wrapper, args_list),
             total=len(pairs),
             desc="CCM pairs",
             disable=not verbose

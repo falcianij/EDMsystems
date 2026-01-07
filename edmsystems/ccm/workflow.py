@@ -233,7 +233,7 @@ def test_ccm_pair(X: np.ndarray,
 
         # Sequential surrogate computation (no parallel processing within pair)
         rho_surrogates = []
-        for seed in tqdm(surrogate_seeds, desc=f"{method} surrogates", disable=not verbose):
+        for seed in surrogate_seeds:
             rho = compute_single_surrogate(seed, method)
             rho_surrogates.append(rho)
 

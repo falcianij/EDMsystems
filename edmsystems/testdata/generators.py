@@ -104,9 +104,11 @@ def make_correlated_autocorrelated_series(n: int = 500,
         # 1. Its own past (autocorrelation)
         # 2. Current X value (cross-correlation)
         # 3. Independent noise
+        # Ensure variance components are valid (sum of squares <= 1)
+        noise_var = max(0, 1 - rho_auto**2 - rho_cross**2)
         Y[t] = (rho_auto * Y[t-1] +
                 rho_cross * X[t] +
-                np.sqrt(1 - rho_auto**2 - rho_cross**2) * np.random.randn())
+                np.sqrt(noise_var) * np.random.randn())
 
     return X, Y
 
@@ -384,14 +386,15 @@ def make_test_dataframe(n: int = 500, seed: Optional[int] = None, start_date: st
     -------
     df : pd.DataFrame
         Dataframe with columns:
-        - datetime: Fake datetime index
+        - datetime: Datetime index
         - independent_X, independent_Y: No relationship
         - correlated_X, correlated_Y: Correlated but no causality
-        - crosscorr_X, crosscorr_Y: Cross-correlated with autocorrelation
+        - lagcorr_X, lagcorr_Y: Cross-correlated with autocorrelation
         - autocorr_X, autocorr_Y: Pure autocorrelation, no relationship
         - seasonal_X, seasonal_Y: Common seasonal forcing
-        - causal_X, causal_Y: X -> Y unidirectional
-        - bidirect_X, bidirect_Y: X <-> Y bidirectional
+        - unidirectional_X, unidirectional_Y: X -> Y unidirectional (strong coupling=0.2)
+        - weak_causal_X, weak_causal_Y: X -> Y unidirectional (weak coupling=0.1)
+        - bidirectional_X, bidirectional_Y: X <-> Y bidirectional
         - indirect_X, indirect_Z, indirect_Y: X -> Z -> Y chain
 
     Notes
@@ -399,11 +402,12 @@ def make_test_dataframe(n: int = 500, seed: Optional[int] = None, start_date: st
     Ground truth network:
     - independent: No edges
     - correlated: No edges (correlation is not causation)
-    - crosscorr: No causal edges (instantaneous correlation only)
+    - lagcorr: No causal edges (instantaneous correlation only)
     - autocorr: No edges
     - seasonal: No edges (common cause, not direct causation)
-    - causal: X -> Y
-    - bidirect: X <-> Y
+    - unidirectional: X -> Y
+    - weak_causal: X -> Y
+    - bidirectional: X <-> Y
     - indirect: X -> Z -> Y (no direct X -> Y)
     """
     if seed is not None:
@@ -412,12 +416,13 @@ def make_test_dataframe(n: int = 500, seed: Optional[int] = None, start_date: st
     # Generate all scenarios
     ind_X, ind_Y = make_independent_series(n, seed)
     corr_X, corr_Y = make_correlated_series(n, seed=seed+1 if seed else None)
-    cross_X, cross_Y = make_correlated_autocorrelated_series(n, seed=seed+2 if seed else None)
+    lagcorr_X, lagcorr_Y = make_correlated_autocorrelated_series(n, seed=seed+2 if seed else None)
     auto_X, auto_Y = make_pure_autocorrelated_series(n, seed=seed+3 if seed else None)
     seas_X, seas_Y = make_seasonal_series(n, seed=seed+4 if seed else None)
-    caus_X, caus_Y = make_causal_series(n, seed=seed+5 if seed else None)
-    bid_X, bid_Y = make_bidirectional_causal_series(n, seed=seed+6 if seed else None)
-    indir_X, indir_Z, indir_Y = make_indirect_causal_series(n, seed=seed+7 if seed else None)
+    unidirect_X, unidirect_Y = make_causal_series(n, coupling=0.2, seed=seed+5 if seed else None)
+    weak_X, weak_Y = make_causal_series(n, coupling=0.1, seed=seed+6 if seed else None)
+    bidirect_X, bidirect_Y = make_bidirectional_causal_series(n, seed=seed+7 if seed else None)
+    indir_X, indir_Z, indir_Y = make_indirect_causal_series(n, seed=seed+8 if seed else None)
 
     # Create datetime index
     datetime_index = pd.date_range(start=start_date, periods=n, freq='D')
@@ -429,16 +434,18 @@ def make_test_dataframe(n: int = 500, seed: Optional[int] = None, start_date: st
         'independent_Y': ind_Y,
         'correlated_X': corr_X,
         'correlated_Y': corr_Y,
-        'crosscorr_X': cross_X,
-        'crosscorr_Y': cross_Y,
+        'lagcorr_X': lagcorr_X,
+        'lagcorr_Y': lagcorr_Y,
         'autocorr_X': auto_X,
         'autocorr_Y': auto_Y,
         'seasonal_X': seas_X,
         'seasonal_Y': seas_Y,
-        'causal_X': caus_X,
-        'causal_Y': caus_Y,
-        'bidirect_X': bid_X,
-        'bidirect_Y': bid_Y,
+        'unidirectional_X': unidirect_X,
+        'unidirectional_Y': unidirect_Y,
+        'weak_causal_X': weak_X,
+        'weak_causal_Y': weak_Y,
+        'bidirectional_X': bidirect_X,
+        'bidirectional_Y': bidirect_Y,
         'indirect_X': indir_X,
         'indirect_Z': indir_Z,
         'indirect_Y': indir_Y,
@@ -462,22 +469,24 @@ def get_ground_truth_network() -> pd.DataFrame:
     The ground truth is:
     - independent: No causation
     - correlated: No causation (correlation ≠ causation)
-    - crosscorr: No causation (instantaneous correlation only)
+    - lagcorr: No causation (instantaneous correlation only)
     - autocorr: No causation
     - seasonal: No causation (common external driver)
-    - causal: X -> Y (unidirectional)
-    - bidirect: X <-> Y (bidirectional)
+    - unidirectional: X -> Y (strong unidirectional)
+    - weak_causal: X -> Y (weak unidirectional)
+    - bidirectional: X <-> Y (bidirectional)
     - indirect: X -> Z -> Y (no direct X -> Y edge)
     """
     # List all variables
     variables = [
         'independent_X', 'independent_Y',
         'correlated_X', 'correlated_Y',
-        'crosscorr_X', 'crosscorr_Y',
+        'lagcorr_X', 'lagcorr_Y',
         'autocorr_X', 'autocorr_Y',
         'seasonal_X', 'seasonal_Y',
-        'causal_X', 'causal_Y',
-        'bidirect_X', 'bidirect_Y',
+        'unidirectional_X', 'unidirectional_Y',
+        'weak_causal_X', 'weak_causal_Y',
+        'bidirectional_X', 'bidirectional_Y',
         'indirect_X', 'indirect_Z', 'indirect_Y',
     ]
 
@@ -489,12 +498,15 @@ def get_ground_truth_network() -> pd.DataFrame:
     var_idx = {var: i for i, var in enumerate(variables)}
 
     # Add true causal edges
-    # causal: X -> Y
-    adjacency[var_idx['causal_X'], var_idx['causal_Y']] = 1
+    # unidirectional: X -> Y
+    adjacency[var_idx['unidirectional_X'], var_idx['unidirectional_Y']] = 1
 
-    # bidirect: X <-> Y
-    adjacency[var_idx['bidirect_X'], var_idx['bidirect_Y']] = 1
-    adjacency[var_idx['bidirect_Y'], var_idx['bidirect_X']] = 1
+    # weak_causal: X -> Y
+    adjacency[var_idx['weak_causal_X'], var_idx['weak_causal_Y']] = 1
+
+    # bidirectional: X <-> Y
+    adjacency[var_idx['bidirectional_X'], var_idx['bidirectional_Y']] = 1
+    adjacency[var_idx['bidirectional_Y'], var_idx['bidirectional_X']] = 1
 
     # indirect: X -> Z -> Y
     adjacency[var_idx['indirect_X'], var_idx['indirect_Z']] = 1

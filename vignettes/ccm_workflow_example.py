@@ -96,7 +96,7 @@ print("-"*80)
 preprocessed_data = {}
 transform_params_dict = {}
 
-variables = [col for col in df.columns if col != 'time']
+variables = [col for col in df.columns if col != 'datetime']
 
 for var in variables:
     processed, params = preprocess_for_ccm(

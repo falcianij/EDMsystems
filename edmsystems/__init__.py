@@ -25,10 +25,12 @@ from .preprocessing import (
 )
 
 from .ccm import (
-    ccm_analysis,
-    ccm_with_significance,
-    find_optimal_E_tau,
-    auto_optimize_parameters,
+    run_ccm_workflow,
+    compute_ccm_pair,
+    optimize_parameters,
+    find_optimal_tau,
+    find_optimal_E,
+    find_optimal_Tp,
 )
 
 from .surrogates import (
@@ -48,10 +50,12 @@ __all__ = [
     'get_detrending_method',
     'detrend_dataframe',
     # CCM
-    'ccm_analysis',
-    'ccm_with_significance',
-    'find_optimal_E_tau',
-    'auto_optimize_parameters',
+    'run_ccm_workflow',
+    'compute_ccm_pair',
+    'optimize_parameters',
+    'find_optimal_tau',
+    'find_optimal_E',
+    'find_optimal_Tp',
     # Surrogates
     'generate_seasonal_pair_surrogates',
     'empirical_p',

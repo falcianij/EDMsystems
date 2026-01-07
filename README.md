@@ -253,6 +253,55 @@ df_lagged = create_lagged_features(
 )
 ```
 
+**Normalization and Detrending:**
+```python
+from edmsystems.preprocessing import (
+    normalize,
+    denormalize,
+    detrend,
+    retrend,
+    preprocess_for_ccm,
+    SeriesTransformer
+)
+
+# Quick normalization with inverse
+X_norm, params = normalize(X, method='zscore', return_params=True)
+X_original = denormalize(X_norm, params)
+
+# Quick detrending with inverse
+X_detrended, params = detrend(X, method='linear', return_params=True)
+X_original = retrend(X_detrended, params)
+
+# Recommended preprocessing for CCM (detrend + normalize)
+X_processed, transformer = preprocess_for_ccm(
+    X,
+    detrend_method='linear',
+    normalize_method='zscore',
+    return_transformer=True
+)
+
+# After making predictions, transform back to original scale
+predictions_original = transformer.inverse_transform_chain(predictions_transformed)
+
+# Advanced: Chain multiple transformations
+transformer = SeriesTransformer()
+X_transformed = transformer.fit_transform_chain(
+    X,
+    methods=['linear_detrend', 'zscore']
+)
+X_original = transformer.inverse_transform_chain(X_transformed)
+```
+
+Available normalization methods:
+- `'zscore'`: Z-score normalization (mean=0, std=1)
+- `'minmax'`: Min-max scaling (range [0, 1])
+- `'robust'`: Robust scaling using median and IQR
+
+Available detrending methods:
+- `'linear'`: Remove linear trend
+- `'polynomial'`: Remove polynomial trend (specify `degree`)
+- `'difference'`: First-order differencing
+
 ### Test Data (`edmsystems.testdata`)
 
 **10 Synthetic Scenarios:**
